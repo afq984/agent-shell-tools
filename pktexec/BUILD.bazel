@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 rust_library(
     name = "wire",
@@ -25,10 +25,58 @@ rust_library(
     ],
 )
 
+rust_binary(
+    name = "pktexecd",
+    srcs = ["pktexecd.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":wire",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:command-fds",
+        "@crates//:libc",
+        "@crates//:nix",
+        "@crates//:tokio",
+        "@crates//:tokio-seqpacket",
+    ],
+)
+
+rust_binary(
+    name = "pktexec",
+    srcs = ["pktexec.rs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":wire",
+        "@crates//:anyhow",
+        "@crates//:libc",
+        "@crates//:nix",
+        "@crates//:tokio",
+        "@crates//:tokio-seqpacket",
+    ],
+)
+
 rust_test(
     name = "wire_test",
     crate = ":wire",
     deps = [
         "@crates//:googletest",
+    ],
+)
+
+rust_test(
+    name = "pktexec_test",
+    srcs = ["pktexec_test.rs"],
+    data = [
+        ":pktexec",
+        ":pktexecd",
+    ],
+    env = {
+        "PKTEXEC_BIN": "$(rootpath :pktexec)",
+        "PKTEXECD_BIN": "$(rootpath :pktexecd)",
+    },
+    tags = ["local"],
+    deps = [
+        "@crates//:googletest",
+        "@crates//:libc",
     ],
 )
