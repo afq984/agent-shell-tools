@@ -36,9 +36,8 @@ pub enum ClientMessage {
 /// Messages sent from the server to the client.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum ServerMessage {
-    /// Sent exactly once in response to ExecRequest.
-    FilterResult { allowed: bool, reason: String },
-    /// Sent exactly once after the command terminates (only if allowed).
+    /// Sent exactly once after the command terminates. The connection closes
+    /// after this message.
     Exit { code: i32 },
 }
 
@@ -85,28 +84,6 @@ mod tests {
         let msg = ClientMessage::TermSignal { signo: 15 };
         let bytes = encode(&msg).unwrap();
         let decoded: ClientMessage = decode(&bytes).unwrap();
-        expect_that!(decoded, eq(&msg));
-    }
-
-    #[googletest::test]
-    fn roundtrip_filter_result_allowed() {
-        let msg = ServerMessage::FilterResult {
-            allowed: true,
-            reason: String::new(),
-        };
-        let bytes = encode(&msg).unwrap();
-        let decoded: ServerMessage = decode(&bytes).unwrap();
-        expect_that!(decoded, eq(&msg));
-    }
-
-    #[googletest::test]
-    fn roundtrip_filter_result_denied() {
-        let msg = ServerMessage::FilterResult {
-            allowed: false,
-            reason: "command not permitted".into(),
-        };
-        let bytes = encode(&msg).unwrap();
-        let decoded: ServerMessage = decode(&bytes).unwrap();
         expect_that!(decoded, eq(&msg));
     }
 

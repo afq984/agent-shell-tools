@@ -2,7 +2,30 @@
 
 ## Status
 
-Proposed. Not yet implemented.
+Partially implemented as an **unfiltered shell server** (the MVP). The
+daemon (`pktexecd`) and client (`pktexec`) run commands in the daemon's
+inherited environment over the SOCK_SEQPACKET + SCM_RIGHTS transport
+described below. This is the primary use case today: launch `pktexecd`
+from an already-set-up shell (e.g. after `lunch`, or inside `cros_sdk`) so
+clients run commands in that environment without repeating the setup.
+
+The MVP deliberately omits the security layers described in this document,
+and the code diverges from it in a few places:
+
+- **No command filter and no `working_dir` validation** (§5.1, §6.1). Every
+  received command is run as-is. The daemon is *not* a security boundary; it
+  only restricts *who can connect* by creating the socket with mode `0600`.
+- **No `FilterResult` message** (§6). With no filter there is no allow/deny
+  decision, so the protocol is `ExecRequest` → `Exit`, plus `TermSignal` for
+  cancellation. The client closes its stdio immediately after `send`
+  (SCM_RIGHTS guarantees the kernel holds the fd references).
+- **No `pktexec-ns` helper, no mount-namespace / `nosymfollow` isolation**
+  (§5.3). The daemon spawns commands directly; `cwd` is applied via
+  `Command::current_dir`. The one remaining `unsafe` block is the `setpgid`
+  in the spawn `pre_exec`; the status-pipe machinery is gone.
+
+The sections below describe the full filtered, namespace-isolated design as
+the intended roadmap for re-introducing host-side sandboxing.
 
 ## 1. Problem
 
