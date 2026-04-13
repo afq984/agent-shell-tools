@@ -79,6 +79,11 @@ crate.spec(
     version = "1",
 )
 crate.spec(
+    features = ["alloc"],
+    package = "postcard",
+    version = "1",
+)
+crate.spec(
     package = "googletest",
     version = "0.14",
 )
