@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output};
 
@@ -285,4 +287,92 @@ fn log_file_redirects_nsjail_output() {
     expect_that!(log_contents, contains_substring("Mode:"));
 
     std::fs::remove_file(&log).ok();
+}
+
+// ---------------------------------------------------------------------------
+// Egress
+// ---------------------------------------------------------------------------
+
+/// A Unix socket standing in for egressd: answers each line received on a
+/// connection with "pong: <line>".
+struct FakeProxy {
+    sock: PathBuf,
+    _dir: tempfile::TempDir,
+}
+
+fn fake_proxy() -> FakeProxy {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("egress.sock");
+    let listener = UnixListener::bind(&sock).unwrap();
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let conn = conn.unwrap();
+            std::thread::spawn(move || {
+                let mut w = conn.try_clone().unwrap();
+                for line in BufReader::new(conn).lines() {
+                    let Ok(line) = line else { break };
+                    writeln!(w, "pong: {line}").unwrap();
+                }
+            });
+        }
+    });
+    FakeProxy { sock, _dir: dir }
+}
+
+fn sandbox_with_egress(cmd: &str) -> SandboxOutput {
+    let proxy = fake_proxy();
+    sandbox_with_flags(
+        &["--egress-socket", proxy.sock.to_str().unwrap()],
+        &["/bin/bash", "-c", cmd],
+    )
+}
+
+#[googletest::test]
+fn egress_jail_has_only_loopback() {
+    let r = sandbox_with_egress("tail -n +3 /proc/net/dev | cut -d: -f1 | tr -d ' '");
+    expect_that!(r.status.code(), some(eq(0)));
+    expect_that!(r.stdout, eq("lo\n"));
+}
+
+#[googletest::test]
+fn egress_relay_reaches_socket() {
+    let r = sandbox_with_egress(
+        "exec 3<>/dev/tcp/127.0.0.1/3128 && echo ping >&3 && head -n1 <&3",
+    );
+    expect_that!(r.status.code(), some(eq(0)));
+    expect_that!(r.stdout, eq("pong: ping\n"));
+}
+
+#[googletest::test]
+fn egress_sets_proxy_variables() {
+    let r = sandbox_with_egress("echo $HTTP_PROXY $https_proxy $NO_PROXY");
+    expect_that!(r.status.code(), some(eq(0)));
+    expect_that!(
+        r.stdout,
+        eq("http://127.0.0.1:3128 http://127.0.0.1:3128 localhost,127.0.0.1,::1\n")
+    );
+}
+
+#[googletest::test]
+fn egress_command_stays_pid_1() {
+    let r = sandbox_with_egress("echo $$");
+    expect_that!(r.status.code(), some(eq(0)));
+    expect_that!(r.stdout, eq("1\n"));
+}
+
+#[googletest::test]
+fn egress_preserves_exit_code() {
+    let r = sandbox_with_egress("exit 42");
+    expect_that!(r.status.code(), some(eq(42)));
+}
+
+#[googletest::test]
+fn egress_missing_command_exits_127() {
+    let proxy = fake_proxy();
+    let r = sandbox_with_flags(
+        &["--egress-socket", proxy.sock.to_str().unwrap()],
+        &["/nonexistent"],
+    );
+    expect_that!(r.status.code(), some(eq(127)));
+    expect_that!(r.stderr, contains_substring("exec /nonexistent"));
 }

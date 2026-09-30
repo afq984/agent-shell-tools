@@ -8,6 +8,10 @@ Tools to let coding agents access the shell with opinionated defaults.
   boundary is the primary security model: the agent runs with full freedom
   inside the sandbox but cannot access host credentials or mutate the host
   filesystem.
+- **[`egress`](egress/)** — allowlisting HTTP proxy on a Unix socket. With
+  `sandbox --egress-socket`, the jail gets a loopback-only network and this
+  proxy, reached through an in-jail relay at `http://127.0.0.1:3128`, is its
+  only way out.
 - **[`command_filter`](command_filter/)** — rule language and filter for
   host-side command execution. Complements sandboxing by narrowly delegating
   specific CLI capabilities the agent may use with the user's ambient
